@@ -106,7 +106,7 @@ int main (int argc, char **argv)
 	clock_t time=-clock();
 	
    	create_candidate_itemset(fp,s,&n,&item_to_int,&l,&frequent_items,&buckets);
-	printf("il numero di coppie con i frequent items è: %d", (l+1)*l/2);
+	printf("il numero di coppie con i frequent items è: %d", (l*(l-1))/2);
 
 	rewind(fp);
    	
@@ -174,7 +174,7 @@ int create_candidate_itemset(FILE *fp, int s,int *c,char ***item_to_int,int *n, 
 		exit(1);
 	}
 
-	//Leggi le righe dal file
+	//Legge le righe dal file
     while (fgets(buf, 80000, fp) != NULL) {
         int numRead = 0;
 
@@ -186,7 +186,7 @@ int create_candidate_itemset(FILE *fp, int s,int *c,char ***item_to_int,int *n, 
 
 		int length=0; //lunghezza basket
 
-        // Leggi le stringhe separate da spazio nella riga
+        //Legge le stringhe separate da spazio nella riga
         while (sscanf(buf + numRead, "%s", item) == 1) {
 
 			//Aggiorno il count dei singoli elementi
@@ -211,7 +211,7 @@ int create_candidate_itemset(FILE *fp, int s,int *c,char ***item_to_int,int *n, 
 				item_count[*c]=1;
 			}
 
-			//aumento la lunghezza e copio l'elemento nell'array del basket
+			//Aumenta la lunghezza e copia l'elemento nell'array del basket
 			if(*c!=0){
 				if ((basket=realloc(basket,(length+1)*sizeof(int)))==NULL)
 					exit (1);
@@ -228,11 +228,11 @@ int create_candidate_itemset(FILE *fp, int s,int *c,char ***item_to_int,int *n, 
 			length++;
 
 
-            // Aggiorna l'indice di lettura per la prossima stringa
+            //Aggiorna l'indice di lettura per la prossima stringa
             numRead += strlen(item) + 1;
         }
 
-		//per ogni coppia aggiorno il count
+		//Per ogni coppia aggiorna il count
 		for (int i=0;i<length;i++){
 			for (int j=i+1;j<length;j++){
 				int hash_value = hash(basket[i],basket[j]);
@@ -245,20 +245,18 @@ int create_candidate_itemset(FILE *fp, int s,int *c,char ***item_to_int,int *n, 
 
 		free(basket);
     }
-	//Count of frequent items
-	(*n)=-1;
+
+	//Conteggio dei frequent items
+	(*n)=0;
 	
 	for (int i=0;i<(*c)+1;i++){
-		
 		if (item_count[i]>=s){
-			*n=*n+1;
-			if(*n!=0)
-				*frequent_items=realloc(*frequent_items,(*n+1)*sizeof(int));
-				if (!frequent_items){
-				printf("allocazione fallita");
-				exit(0);
-				}
 			(*frequent_items)[*n]=i;
+			*n=*n+1;
+			if ((*frequent_items=realloc(*frequent_items,(*n+1)*sizeof(int)))==NULL){
+					printf("allocazione fallita");
+					exit(1);
+			}
 		}
 	}
 
