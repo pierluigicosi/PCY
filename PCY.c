@@ -3,18 +3,16 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <unistd.h>
 
 #define HASH_DIM 500000
 
-int create_candidate_itemset(FILE *file, int s, int *c,char ***item_to_int,int *n, int **frequent_items, int **buckets);
-int hash(int a,int b);
-int create_bitmap(int s,int **buckets,uint8_t *bitmap);
-void count_frequentPairs(FILE *file, int s,int length,char **item_to_int,int length2,int *frequent_items, uint8_t *bitmap);
 
+/*********************************** STRUTTURE PER HASH TABLE ***********************************/
 
 typedef struct {
-    int item1;
-	int item2;
+    uint32_t item1;
+	uint32_t item2;
     uint32_t count;
 } triplet;
 
@@ -28,9 +26,95 @@ typedef struct {
     node_t* buckets[HASH_DIM];
 } hash_table_t;
 
+/************************************ DICHIARAZIONE FUNZIONI ***********************************/
 
+int create_candidate_itemset(FILE *file, int s, int *c,char ***item_to_int,int *n, int **frequent_items, int **buckets);
+int hash(int a,int b);
+int create_bitmap(int s,int **buckets,uint8_t *bitmap);
+void count_frequentPairs(FILE *file, int s,int length,char **item_to_int,int length2,int *frequent_items, uint8_t *bitmap);
+hash_table_t* create_hash_table();
+int insert_retrieve(hash_table_t* hash_table, uint32_t item1, uint32_t item2,int index);
+void destroy_hash_table(hash_table_t* hash_table);
+void *my_malloc (int id, int bytes);
+
+
+int main (int argc, char **argv)
+{
+	clock_t start=clock();
+	
+	if(argc!=3){
+		printf("usage: ./PCY <file name> <threshold>");
+		exit(0);}
+	
+	char *file=argv[1];
+	int s=atoi(argv[2]); //support threshold
+
+	FILE *fp;
+	if((fp=fopen(file, "rt"))==NULL) {
+		printf("Error in file opening");
+		exit(1);
+	}
+	
+   	/************************************* PASS 1 ***************************************/
+   	
+   	int *buckets;
+   	int n;  //numero di items
+   	char **item_to_int;
+	int l;  //numero di frequent items
+	int *frequent_items;
+	int id=getpid();
+	
+	
+   	create_candidate_itemset(fp,s,&n,&item_to_int,&l,&frequent_items,&buckets);
+	printf("il numero di coppie con i frequent items è: %d", (l*(l-1))/2);
+
+	rewind(fp);
+   	
+   	/*********************************** BETWEEN PASS ************************************/
+   	
+   	uint8_t *bitmap;
+	bitmap=my_malloc(id,HASH_DIM*sizeof(uint8_t));
+   	create_bitmap(s,&buckets,bitmap);
+   	
+   	free(buckets);
+   	
+   	
+   /************************************* PASS 2 *****************************************/
+	
+	printf("\nle coppie frequenti con threshold %d sono:\n",s);
+	count_frequentPairs(fp,s,n,item_to_int,l,frequent_items,bitmap);
+	
+   	
+   	//free memory
+   	free(item_to_int);
+   	free(frequent_items);
+   	free(bitmap);
+
+	clock_t end = clock();
+   	printf("tempo totale di esecuzione %f",(double)(end-start)/CLOCKS_PER_SEC);
+}
+	
+
+void *my_malloc (int id, int bytes) 
+{
+   void *buffer;
+    if ((buffer = malloc ((size_t) bytes)) == NULL) {
+      printf ("Error: Malloc failed for process %d\n", id);
+      fflush (stdout);
+	  exit(1);
+   }
+   return buffer;
+}
+
+
+/*********************************** FUNZIONI HASH TABLE ***********************************/
 hash_table_t* create_hash_table() {
-    hash_table_t* hash_table = (hash_table_t*)malloc(sizeof(hash_table_t));
+
+	int id=getpid();
+    hash_table_t* hash_table;
+
+	hash_table=my_malloc(id,sizeof(hash_table_t));
+
     for (uint32_t i = 0; i < HASH_DIM; i++) {
         hash_table->buckets[i] = NULL;
     }
@@ -40,6 +124,7 @@ hash_table_t* create_hash_table() {
 // Inserisco una tripletta e aggiorno il count
 int insert_retrieve(hash_table_t* hash_table, uint32_t item1, uint32_t item2,int index) {
 	int flag=0;
+	int id=getpid();
 
 	node_t* current = hash_table->buckets[index];
     while (current != NULL) {
@@ -54,7 +139,8 @@ int insert_retrieve(hash_table_t* hash_table, uint32_t item1, uint32_t item2,int
 
 	if(flag==0){
 		//Creo nuovo nodo
-		node_t* new_node = (node_t*)malloc(sizeof(node_t));
+		node_t* new_node=my_malloc(id,sizeof(node_t));
+	
 		new_node->triplet.item1 = item1;
 		new_node->triplet.item2 = item2;
 		new_node->triplet.count = 1;
@@ -77,112 +163,31 @@ void destroy_hash_table(hash_table_t* hash_table) {
     free(hash_table);
 }
 
-int main (int argc, char **argv)
-{
-	
-	clock_t start=clock();
-	
-	if(argc!=3){
-		printf("usage: ./PCY <file name> <threshold>");
-		exit(0);}
-	
-	char *file=argv[1];
-	int s=atoi(argv[2]); //support threshold
-
-	FILE *fp;
-	if((fp=fopen(file, "rt"))==NULL) {
-		printf("Errore nell'apertura del file'");
-		exit(1);
-	}
-	
-   	/*************************************PASS 1***************************************/
-   	
-   	int *buckets;
-   	int n;  //numero di items
-   	char **item_to_int;
-	int l;  //numero di frequent items
-	int *frequent_items;
-	
-	clock_t time=-clock();
-	
-   	create_candidate_itemset(fp,s,&n,&item_to_int,&l,&frequent_items,&buckets);
-	printf("il numero di coppie con i frequent items è: %d", (l*(l-1))/2);
-
-	rewind(fp);
-   	
-   	/***********************************BETWEEN PASS************************************/
-   	
-   	uint8_t *bitmap=malloc(HASH_DIM*sizeof(uint8_t));
-	if (!bitmap){
-		printf("allocazione fallita");
-		exit(0);
-	}
-   	create_bitmap(s,&buckets,bitmap);
-   	
-   	free(buckets);
-   	
-   	
-   /*************************************PASS 2*****************************************/
-	
-	printf("\nle coppie frequenti con threshold %d sono:\n",s);
-	count_frequentPairs(fp,s,n,item_to_int,l,frequent_items,bitmap);
-	
-   	
-   	//free memory
-   	free(item_to_int);
-   	free(frequent_items);
-   	free(bitmap);
-
-	clock_t end = clock();
-   	printf("tempo totale di esecuzione %f",(double)(end-start)/CLOCKS_PER_SEC);
-}
-	
-
-
+/*********************************** FUNZIONI FREQUENT ITEMSET ***********************************/
 
 int create_candidate_itemset(FILE *fp, int s,int *c,char ***item_to_int,int *n, int **frequent_items, int **buckets){
 	
-	if ((*buckets=malloc(HASH_DIM*sizeof(int)))==NULL){
-		printf("allocazione fallita");
-		exit(1);
-	}
+	int id = getpid();
 
-   	*item_to_int=malloc(sizeof(char *));
-	(*item_to_int)[0] = malloc(24 * sizeof(char));
-	if (!item_to_int){
-		printf("allocazione fallita");
-		exit(1);
-	}
+	*buckets=my_malloc(id,HASH_DIM*sizeof(int));
 
-	if ((*frequent_items=malloc(sizeof(int)))==NULL){
-		printf("allocazione fallita");
-		exit(1);
-	}
+   	*item_to_int=my_malloc(id,sizeof(char *));
+	(*item_to_int)[0] = my_malloc(id,24 * sizeof(char));
+
+	*frequent_items=my_malloc(id,sizeof(int));
 	
 	*c=-1;  //numero di item distinti
 	char item[24];
 	
-	int *item_count;
-	if ((item_count=malloc(sizeof(int)))==NULL){
-		printf("allocazione fallita");
-		exit(1);
-	}
+	int *item_count=my_malloc(id,sizeof(int));
 
-	char *buf;
-	if ((buf = malloc(80000*sizeof(char))) == NULL){
-		printf("allocazione fallita");
-		exit(1);
-	}
+	char *buf = my_malloc(id,80000*sizeof(char));
 
 	//Legge le righe dal file
     while (fgets(buf, 80000, fp) != NULL) {
         int numRead = 0;
 
-		int *basket;
-		if ((basket=malloc(sizeof(int)))==NULL){
-			printf("allocazione fallita");
-			exit(1);
-		}
+		int *basket=my_malloc(id,sizeof(int));
 
 		int length=0; //lunghezza basket
 
@@ -203,7 +208,7 @@ int create_candidate_itemset(FILE *fp, int s,int *c,char ***item_to_int,int *n, 
 				if (*c!=0){
 					if((*item_to_int=realloc(*item_to_int,(*c+1)*sizeof(char *)))==NULL)
 						exit(1);
-					(*item_to_int)[*c] = malloc(24 * sizeof(char));
+					(*item_to_int)[*c] = my_malloc(id,24 * sizeof(char));
 					if((item_count=realloc(item_count,(*c+1) * sizeof(int)))==NULL)
 						exit(1);
 				}
@@ -218,7 +223,7 @@ int create_candidate_itemset(FILE *fp, int s,int *c,char ***item_to_int,int *n, 
 			}
 				
 				
-			for (int k=0;k<*c+1;k++){
+			for (uint32_t k=0;k<*c+1;k++){
 				if(strcmp((*item_to_int)[k],item)==0){
 					basket[length]=k;
 					break;
@@ -233,8 +238,8 @@ int create_candidate_itemset(FILE *fp, int s,int *c,char ***item_to_int,int *n, 
         }
 
 		//Per ogni coppia aggiorna il count
-		for (int i=0;i<length;i++){
-			for (int j=i+1;j<length;j++){
+		for (uint32_t i=0;i<length;i++){
+			for (uint32_t j=i+1;j<length;j++){
 				int hash_value = hash(basket[i],basket[j]);
 			
 				if ((*buckets)[hash_value]<s)
@@ -249,7 +254,7 @@ int create_candidate_itemset(FILE *fp, int s,int *c,char ***item_to_int,int *n, 
 	//Conteggio dei frequent items
 	(*n)=0;
 	
-	for (int i=0;i<(*c)+1;i++){
+	for (uint32_t i=0;i<(*c)+1;i++){
 		if (item_count[i]>=s){
 			(*frequent_items)[*n]=i;
 			*n=*n+1;
@@ -263,7 +268,6 @@ int create_candidate_itemset(FILE *fp, int s,int *c,char ***item_to_int,int *n, 
 	free(item_count);
 	free(buf);
 	return 0;
-
 }
 
 
@@ -279,7 +283,7 @@ int hash(int a, int b){
 
 int create_bitmap(int s,int **buckets,uint8_t *bitmap){
 
-	for (int i=0;i<HASH_DIM;i++){
+	for (uint32_t i=0;i<HASH_DIM;i++){
 		if((*buckets)[i]>=s)
 			bitmap[i]=1;
 		else
@@ -290,37 +294,35 @@ int create_bitmap(int s,int **buckets,uint8_t *bitmap){
 }
 
 
-
 void count_frequentPairs(FILE *fp,int s, int length,char **item_to_int,int length2,int *frequent_items, uint8_t *bitmap){
 
-	hash_table_t* hash_table = create_hash_table();
+	int id = getpid();
 
-	if (!hash_table)
-		exit(0);
+	hash_table_t* hash_table = create_hash_table();
 	
 	char item[24];
 	
 	int t=0; //numero di candidate pairs
 	int f=0;  //numero di frequent pairs
 
-	char *buf=malloc(80000*sizeof(char));
-	if (!buf)
-		exit(0);
+	char *buf=my_malloc(id,80000*sizeof(char));
 
-	//Leggi le righe dal file
+	//Legge le righe dal file
     while (fgets(buf, 80000, fp) != NULL) {
         int numRead = 0;
-		int *basket=malloc(1*sizeof(int));
+		int *basket=my_malloc(id,sizeof(int));
 		int c=-1; //lunghezza basket
 
-        // Leggi le stringhe separate da spazio nella riga
+        //Legge le stringhe separate da spazio nella riga
         while (sscanf(buf + numRead, "%s", item) == 1) {
 			c++;
 			
-			if(c!=0)
-				basket=realloc(basket,(c+1)*sizeof(int));
+			if(c!=0){
+				if((basket=realloc(basket,(c+1)*sizeof(int)))==NULL)
+					exit(1);
+			}
 				
-			for (int k=0;k<length+1;k++){
+			for (uint32_t k=0;k<length+1;k++){
 				if(strcmp(item_to_int[k],item)==0){
 					basket[c]=k;
 					break;
@@ -330,17 +332,17 @@ void count_frequentPairs(FILE *fp,int s, int length,char **item_to_int,int lengt
 			numRead += strlen(item) + 1;
 		}
 
-		//Trovo le coppie frequenti
-		for (int i=0;i<=c;i++){
-			for (int j=i+1;j<=c;j++){
+		//Trova le coppie frequenti
+		for (uint32_t i=0;i<=c;i++){
+			for (uint32_t j=i+1;j<=c;j++){
 				int hash_value=hash(basket[i],basket[j]);
-				if(bitmap[hash_value]==1){
-					for(int i1=0;i1<=length2;i1++){
+				if(bitmap[hash_value]==1){  //se mappa in 1
+					for(uint32_t i1=0;i1<=length2;i1++){
 						if(basket[i]==frequent_items[i1]){  //se il primo elemento è frequente
-							for(int i2=0;i2<=length2;i2++){
+							for(uint32_t i2=0;i2<=length2;i2++){
 								if(basket[j]==frequent_items[i2]){  //se il secondo elemento è frequente
 								
-									int count=insert_retrieve(hash_table,basket[i],basket[j],hash_value); //inserisco e ritorno il count
+									int count=insert_retrieve(hash_table,basket[i],basket[j],hash_value);
 								
 									if(count==1){ //se la coppia è candidata frequente
 										t++;
